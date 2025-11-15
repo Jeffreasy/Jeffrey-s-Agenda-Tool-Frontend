@@ -1,4 +1,4 @@
-// src/components/RuleForm.tsx
+// src/components/RuleEditForm.tsx
 import React from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -6,8 +6,9 @@ import * as z from 'zod'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form-field'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog'
-import { useCreateRule } from '../hooks/useRules'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
+import { useUpdateRule } from '../hooks/useRules'
+import { Rule } from '../types/backend'
 
 const ruleSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -19,52 +20,55 @@ const ruleSchema = z.object({
 
 type RuleFormData = z.infer<typeof ruleSchema>
 
-interface RuleFormProps {
-  accountId: string
-  onSuccess?: () => void // Optioneel voor refresh
+interface RuleEditFormProps {
+  rule: Rule
+  onClose: () => void
 }
 
-export const RuleForm: React.FC<RuleFormProps> = ({ accountId, onSuccess }) => {
-  const createRule = useCreateRule()
+export const RuleEditForm: React.FC<RuleEditFormProps> = ({ rule, onClose }) => {
+  const updateRule = useUpdateRule()
+  
+  // Gebruik de gedefinieerde types
+  const trigger = rule.trigger_conditions
+  const action = rule.action_params
+
   const form = useForm<RuleFormData>({
     resolver: zodResolver(ruleSchema),
     defaultValues: {
-      name: '',
-      summary_contains: '',
-      offset_minutes: '',
-      new_event_title: '',
-      duration_min: '',
+      name: rule.name || '',
+      summary_contains: trigger.summary_contains?.join(', ') || '',
+      offset_minutes: String(action.offset_minutes || ''),
+      new_event_title: action.new_event_title || '',
+      duration_min: String(action.duration_min || ''),
     },
   })
 
   const onSubmit = (data: RuleFormData) => {
-    createRule.mutate({
-      connected_account_id: accountId,
-      name: data.name,
-      trigger_conditions: {
-        summary_contains: data.summary_contains.split(',').map(s => s.trim()).filter(s => s),
-      },
-      action_params: {
-        offset_minutes: parseInt(data.offset_minutes),
-        new_event_title: data.new_event_title,
-        duration_min: parseInt(data.duration_min),
-      },
+    updateRule.mutate({
+      ruleId: rule.id,
+      data: {
+        name: data.name,
+        trigger_conditions: {
+          summary_contains: data.summary_contains.split(',').map(s => s.trim()).filter(s => s),
+        },
+        action_params: {
+          offset_minutes: parseInt(data.offset_minutes),
+          new_event_title: data.new_event_title,
+          duration_min: parseInt(data.duration_min),
+        },
+      }
     }, {
       onSuccess: () => {
-        form.reset()
-        if (onSuccess) onSuccess()
-      },
+        onClose() // Sluit de modal na succes
+      }
     })
   }
 
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button>Create New Rule</Button>
-      </DialogTrigger>
+    <Dialog open={true} onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create Automation Rule</DialogTitle>
+          <DialogTitle>Edit Automation Rule</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -133,8 +137,8 @@ export const RuleForm: React.FC<RuleFormProps> = ({ accountId, onSuccess }) => {
                 </FormItem>
               )}
             />
-            <Button type="submit" disabled={createRule.isPending}>
-              {createRule.isPending ? 'Creating...' : 'Create Rule'}
+            <Button type="submit" disabled={updateRule.isPending}>
+              {updateRule.isPending ? 'Updating...' : 'Update Rule'}
             </Button>
           </form>
         </Form>

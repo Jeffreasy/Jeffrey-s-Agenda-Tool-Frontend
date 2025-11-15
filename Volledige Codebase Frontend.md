@@ -1056,32 +1056,90 @@ C:\Users\jeffrey\Desktop\Githubmains\AgendaTool FrontBackend\Frontend\Jeffrey-s-
 
 
 
-
-
-C:\Users\jeffrey\Desktop\Githubmains\AgendaTool FrontBackend\Frontend\Jeffrey-s-Agenda-Tool FRONTEND\react-app\src\hooks\useAccounts.ts
+C:\Users\jeffrey\Desktop\Githubmains\AgendaTool FrontBackend\Frontend\Jeffrey-s-Agenda-Tool FRONTEND\react-app\src\hooks\useEvents.ts
+// src/hooks/useEvents.ts
 import { useQuery } from '@tanstack/react-query'
 import api from '../lib/api'
-import { Account } from '../types/backend'
+import { GoogleCalendarEvent } from '../types/backend' // Importeer het nieuwe type
 
-export const useAccounts = () => {
+export const useEvents = (accountId?: string) => {
   return useQuery({
-    queryKey: ['accounts'],
+    queryKey: ['events', accountId],
     queryFn: async () => {
-      const response = await api.get<Account[]>('/accounts')
+      if (!accountId) return [] // Voorkom een call zonder accountId
+
+      // Haal de events op van de backend
+      // De backend stuurt de ruwe Google Calendar events door
+      const response = await api.get<GoogleCalendarEvent[]>(
+        `/accounts/${accountId}/calendar/events`
+      )
       return response.data
     },
+    enabled: !!accountId, // Voer alleen uit als we een accountId hebben
+  })
+}// src/hooks/useEvents.ts
+import { useQuery } from '@tanstack/react-query'
+import api from '../lib/api'
+import { GoogleCalendarEvent } from '../types/backend' // Importeer het nieuwe type
+
+export const useEvents = (accountId?: string) => {
+  return useQuery({
+    queryKey: ['events', accountId],
+    queryFn: async () => {
+      if (!accountId) return [] // Voorkom een call zonder accountId
+
+      // Haal de events op van de backend
+      // De backend stuurt de ruwe Google Calendar events door
+      const response = await api.get<GoogleCalendarEvent[]>(
+        `/accounts/${accountId}/calendar/events`
+      )
+      return response.data
+    },
+    enabled: !!accountId, // Voer alleen uit als we een accountId hebben
   })
 }
 
 
 
+
+
+
+C:\Users\jeffrey\Desktop\Githubmains\AgendaTool FrontBackend\Frontend\Jeffrey-s-Agenda-Tool FRONTEND\react-app\src\hooks\useLogs.ts
+import { useQuery } from '@tanstack/react-query'
+import api from '../lib/api'
+import { AutomationLog } from '../types/backend'
+
+export const useLogs = (accountId?: string) => {
+  return useQuery({
+    queryKey: ['logs', accountId],
+    queryFn: async () => {
+      const response = await api.get<AutomationLog[]>(`/accounts/${accountId}/logs`)
+      return response.data
+    },
+    enabled: !!accountId, // Voer alleen uit als we een accountId hebben
+    refetchInterval: 60000, // Haal elke minuut opnieuw op
+  })
+}
+
+
+
+
+
+
 C:\Users\jeffrey\Desktop\Githubmains\AgendaTool FrontBackend\Frontend\Jeffrey-s-Agenda-Tool FRONTEND\react-app\src\hooks\useRules.ts
+// src/hooks/useRules.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { Rule } from '../types/backend'
 
 interface CreateRuleData {
   connected_account_id: string
+  name: string
+  trigger_conditions: object
+  action_params: object
+}
+
+interface UpdateRuleData {
   name: string
   trigger_conditions: object
   action_params: object
@@ -1106,48 +1164,89 @@ export const useCreateRule = () => {
       return response.data
     },
     onSuccess: (data) => {
-      // Invalideer specifiek voor dit account
-      queryClient.invalidateQueries({ queryKey: ['rules', data.connected_account_id] })
+      queryClient.invalidateQueries({ queryKey: ['rules', data.ConnectedAccountID] })
     },
   })
 }
 
-// --- NIEUW (Feature 2) ---
+export const useUpdateRule = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ ruleId, data }: { ruleId: string; data: UpdateRuleData }) => {
+      const response = await api.put<Rule>(`/rules/${ruleId}`, data)
+      return response.data
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['rules', data.ConnectedAccountID] })
+    },
+  })
+}
+
+export const useToggleRule = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (ruleId: string) => {
+      const response = await api.put<Rule>(`/rules/${ruleId}/toggle`)
+      return response.data
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['rules', data.ConnectedAccountID] })
+    },
+  })
+}
+
 export const useDeleteRule = () => {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (ruleId: string) => {
       await api.delete(`/rules/${ruleId}`)
     },
-    onSuccess: (_, variables, context) => {
-      // We weten niet welk accountId het was, dus invalideer alle rules
-      // Een betere implementatie zou het accountId meegeven
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rules'] })
     },
   })
 }
-// --- EINDE NIEUW ---
 
 
 
-C:\Users\jeffrey\Desktop\Githubmains\AgendaTool FrontBackend\Frontend\Jeffrey-s-Agenda-Tool FRONTEND\react-app\src\hooks\useLogs.ts
-import { useQuery } from '@tanstack/react-query'
+
+
+C:\Users\jeffrey\Desktop\Githubmains\AgendaTool FrontBackend\Frontend\Jeffrey-s-Agenda-Tool FRONTEND\react-app\src\hooks\useUser.ts
+// src/hooks/useUser.ts
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
-import { AutomationLog } from '../types/backend'
 
-export const useLogs = (accountId?: string) => {
+interface User {
+  ID: string
+  Email: string
+  Name: string
+  CreatedAt: string
+  UpdatedAt: string
+}
+
+export const useUser = () => {
   return useQuery({
-    queryKey: ['logs', accountId],
+    queryKey: ['user'],
     queryFn: async () => {
-      const response = await api.get<AutomationLog[]>(`/accounts/${accountId}/logs`)
+      const response = await api.get<User>('/users/me')
       return response.data
     },
-    enabled: !!accountId, // Voer alleen uit als we een accountId hebben
-    refetchInterval: 60000, // Haal elke minuut opnieuw op
   })
 }
 
-
+export const useDeleteUser = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      await api.delete('/me')
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user'] })
+      // Redirect to login na delete
+      window.location.href = '/'
+    },
+  })
+}
 
 
 
@@ -1210,11 +1309,31 @@ C:\Users\jeffrey\Desktop\Githubmains\AgendaTool FrontBackend\Frontend\Jeffrey-s-
 
 
 C:\Users\jeffrey\Desktop\Githubmains\AgendaTool FrontBackend\Frontend\Jeffrey-s-Agenda-Tool FRONTEND\react-app\src\pages\Calendar.tsx
+// src/pages/Calendar.tsx
 import React from 'react'
+import FullCalendar from '@fullcalendar/react'
+import dayGridPlugin from '@fullcalendar/daygrid'
+import timeGridPlugin from '@fullcalendar/timegrid'
 import { Layout } from '../components/layout'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+import { useAccounts } from '../hooks/useAccounts'
+import { useEvents } from '../hooks/useEvents' // Nieuw
 
 const Calendar: React.FC = () => {
+  const { data: accounts } = useAccounts()
+  const firstAccountId = accounts?.[0]?.ID
+  const { data: events, isLoading } = useEvents(firstAccountId)
+
+  // AANGEPAST: Dit blok controleert nu op 'dateTime' OF 'date'
+  const calendarEvents = events?.map(event => ({
+    id: event.ID,
+    title: event.Summary,
+    // Als 'dateTime' bestaat, gebruik die (voor specifieke tijden)
+    // Zo niet, gebruik 'date' (voor 'all-day' events)
+    start: event.Start.dateTime || event.Start.date,
+    end: event.End.dateTime || event.End.date,
+  })) || []
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -1226,12 +1345,24 @@ const Calendar: React.FC = () => {
         <Card>
           <CardHeader>
             <CardTitle>Calendar View</CardTitle>
-            <CardDescription>FullCalendar integration coming soon</CardDescription>
+            <CardDescription>Your events from connected account</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-96 bg-muted rounded-lg flex items-center justify-center">
-              <p className="text-muted-foreground">Calendar component will be implemented here</p>
-            </div>
+            {isLoading ? (
+              <p>Loading events...</p>
+            ) : (
+              <FullCalendar
+                plugins={[dayGridPlugin, timeGridPlugin]}
+                initialView="dayGridMonth"
+                events={calendarEvents}
+                headerToolbar={{
+                  left: 'prev,next today',
+                  center: 'title',
+                  right: 'dayGridMonth,timeGridWeek,timeGridDay',
+                }}
+                height="600px"
+              />
+            )}
           </CardContent>
         </Card>
       </div>
@@ -1247,18 +1378,23 @@ export default Calendar
 
 
 C:\Users\jeffrey\Desktop\Githubmains\AgendaTool FrontBackend\Frontend\Jeffrey-s-Agenda-Tool FRONTEND\react-app\src\pages\Dashboard.tsx
-import React, { useEffect } from 'react'
+// src/pages/Dashboard.tsx
+import React, { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Layout } from '../components/layout'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
-import { Button } from '../components/ui/button' // <-- NIEUW
+import { Button } from '../components/ui/button'
 import { RuleForm } from '../components/rule-form'
-import { useAccounts } from '../hooks/useAccounts'
-import { useRules, useDeleteRule } from '../hooks/useRules' // <-- AANGEPAST
-import { useLogs } from '../hooks/useLogs' // <-- NIEUW
+import { RuleEditForm } from '../components/RuleEditForm' // Nieuw
+import { useAccounts, useDeleteAccount } from '../hooks/useAccounts'
+import { useRules, useDeleteRule, useToggleRule } from '../hooks/useRules'
+import { useLogs } from '../hooks/useLogs'
+import { useUser, useDeleteUser } from '../hooks/useUser' // Nieuw
 import { useAuthStore } from '../stores/authStore'
-import { format } from 'date-fns' // <-- NIEUW
-import { Trash2, CheckCircle, XCircle, SkipForward } from 'lucide-react' // <-- NIEUW
+import { format } from 'date-fns'
+import { Trash2, CheckCircle, XCircle, SkipForward, Edit, Pause, Play } from 'lucide-react'
+import { toast } from 'sonner' // Voor errors
+import { Rule } from '../types/backend'
 
 const Dashboard: React.FC = () => {
   const [searchParams] = useSearchParams()
@@ -1268,37 +1404,36 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     const token = searchParams.get('token')
     if (token) {
-      console.log("Gevonden token! Opslaan...")
       setToken(token)
       navigate('/dashboard', { replace: true })
     }
   }, [searchParams, setToken, navigate])
 
-  // Data hooks
+  // Data
   const { data: accounts, isLoading: accountsLoading } = useAccounts()
   const firstAccountId = accounts?.[0]?.id
-
   const { data: rules, isLoading: rulesLoading } = useRules(firstAccountId)
-  const { data: logs, isLoading: logsLoading } = useLogs(firstAccountId) // <-- NIEUW (Feature 1)
+  const { data: logs, isLoading: logsLoading } = useLogs(firstAccountId)
+  const { data: user, isLoading: userLoading } = useUser() // Nieuw
 
-  // Action hooks
-  const deleteRule = useDeleteRule() // <-- NIEUW (Feature 2)
+  // Mutations
+  const deleteRule = useDeleteRule()
+  const toggleRule = useToggleRule() // Nieuw
+  const deleteAccount = useDeleteAccount() // Nieuw
+  const deleteUser = useDeleteUser() // Nieuw
 
-  // --- NIEUW (Feature 1) ---
+  // State voor edit modal
+  const [editingRule, setEditingRule] = useState<Rule | null>(null)
+
   const renderLogIcon = (status: string) => {
     switch (status) {
-      case 'success':
-        return <CheckCircle className="w-4 h-4 text-green-500" />
-      case 'failure':
-        return <XCircle className="w-4 h-4 text-red-500" />
-      case 'skipped':
-        return <SkipForward className="w-4 h-4 text-yellow-500" />
-      default:
-        return null
+      case 'success': return <CheckCircle className="w-4 h-4 text-green-500" />
+      case 'failure': return <XCircle className="w-4 h-4 text-red-500" />
+      case 'skipped': return <SkipForward className="w-4 h-4 text-yellow-500" />
+      default: return null
     }
   }
 
-  // --- NIEUW (Feature 1) ---
   const getLogMessage = (log: any): string => {
     if (log.status === 'success' && log.action_details?.created_event_summary) {
       return `Created event: "${log.action_details.created_event_summary}"`
@@ -1312,6 +1447,31 @@ const Dashboard: React.FC = () => {
     return `Processed rule for "${log.trigger_details?.trigger_summary || 'event'}"`
   }
 
+  const handleDeleteUser = () => {
+    if (confirm('Are you sure you want to delete your account?')) {
+      deleteUser.mutate(undefined, {
+        onSuccess: () => toast.success('Account deleted'),
+        onError: () => toast.error('Failed to delete account'),
+      })
+    }
+  }
+
+  const handleDeleteAccount = (accountId: string) => {
+    if (confirm('Are you sure you want to disconnect this account?')) {
+      deleteAccount.mutate(accountId, {
+        onSuccess: () => toast.success('Account disconnected'),
+        onError: () => toast.error('Failed to disconnect account'),
+      })
+    }
+  }
+
+  const handleToggleRule = (ruleId: string, isActive: boolean) => {
+    toggleRule.mutate(ruleId, {
+      onSuccess: () => toast.success(`Rule ${isActive ? 'paused' : 'activated'}`),
+      onError: () => toast.error('Failed to toggle rule'),
+    })
+  }
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -1320,73 +1480,83 @@ const Dashboard: React.FC = () => {
           <p className="text-muted-foreground">Manage your accounts and automation rules</p>
         </div>
 
+        {/* User Info (Nieuw) */}
+        <Card>
+          <CardHeader>
+            <CardTitle>User Profile</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {userLoading ? 'Loading...' : (
+              <>
+                <p>Email: {user?.email}</p>
+                <Button variant="destructive" onClick={handleDeleteUser} className="mt-4">
+                  Delete My Account
+                </Button>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
         <div className="grid gap-6 md:grid-cols-2">
-          {/* --- CARD 1: Connected Accounts (Aangepast voor duidelijkheid) --- */}
           <Card>
             <CardHeader>
               <CardTitle>Connected Accounts</CardTitle>
-              <CardDescription>
-                {accountsLoading ? 'Loading...' : `${accounts?.length || 0} accounts connected`}
-              </CardDescription>
+              <CardDescription>{accountsLoading ? 'Loading...' : `${accounts?.length || 0} accounts connected`}</CardDescription>
             </CardHeader>
             <CardContent>
-              {accountsLoading && <p>Loading accounts...</p>}
               {accounts?.map((account) => (
                 <div key={account.id} className="flex justify-between items-center py-2">
                   <span>{account.email}</span>
-                  <span className={`text-sm ${account.status === 'active' ? 'text-green-600' : 'text-red-600'}`}>
-                    {account.status === 'active' ? 'Connected' : 'Disconnected'}
-                  </span>
+                  <div>
+                    <span className={`text-sm ${account.status === 'active' ? 'text-green-600' : 'text-red-600'}`}>
+                      {account.status}
+                    </span>
+                    <Button variant="ghost" size="icon" onClick={() => handleDeleteAccount(account.id)}>
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </CardContent>
           </Card>
 
-          {/* --- CARD 2: Automation Rules (ZWAAR AANGEPAST) --- */}
           <Card>
             <CardHeader>
               <CardTitle>Automation Rules</CardTitle>
-              <CardDescription>
-                {rulesLoading ? 'Loading...' : `${rules?.length || 0} rules active`}
-              </CardDescription>
+              <CardDescription>{rulesLoading ? 'Loading...' : `${rules?.length || 0} rules active`}</CardDescription>
             </CardHeader>
             <CardContent>
-              {firstAccountId && <RuleForm accountId={firstAccountId} />}
+              {firstAccountId && <RuleForm accountId={firstAccountId} onSuccess={() => { /* refresh if needed */ }} />}
 
-              {/* --- NIEUWE LIJST (Feature 2) --- */}
               <div className="mt-6 space-y-2">
-                {rulesLoading && <p className="text-sm text-muted-foreground">Loading rules...</p>}
-                {!rulesLoading && rules?.length === 0 && (
-                  <p className="text-sm text-muted-foreground">No rules created yet.</p>
-                )}
                 {rules?.map((rule) => (
                   <div key={rule.id} className="flex justify-between items-center p-2 rounded-md border">
-                    <span className="text-sm font-medium">{rule.name}</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => deleteRule.mutate(rule.id)}
-                      disabled={deleteRule.isPending}
-                    >
-                      <Trash2 className="w-4 h-4 text-destructive" />
-                    </Button>
+                    <span className="text-sm font-medium">{rule.name} {rule.is_active ? '(Active)' : '(Paused)'}</span>
+                    <div>
+                      <Button variant="ghost" size="icon" onClick={() => setEditingRule(rule)}>
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleToggleRule(rule.id, rule.is_active)}>
+                        {rule.is_active ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => deleteRule.mutate(rule.id)}>
+                        <Trash2 className="w-4 h-4 text-destructive" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
-              {/* --- EINDE NIEUWE LIJST --- */}
-
             </CardContent>
           </Card>
         </div>
 
-        {/* --- CARD 3: Recent Activity (ZWAAR AANGEPAST) --- */}
+        {/* Recent Activity */}
         <Card>
           <CardHeader>
             <CardTitle>Recent Activity</CardTitle>
             <CardDescription>Latest automation events</CardDescription>
           </CardHeader>
           <CardContent>
-            {/* --- NIEUWE LIJST (Feature 1) --- */}
             {logsLoading && <p className="text-sm text-muted-foreground">Loading activity...</p>}
             {!logsLoading && logs?.length === 0 && (
               <p className="text-sm text-muted-foreground">No recent activity</p>
@@ -1406,9 +1576,10 @@ const Dashboard: React.FC = () => {
                 </div>
               ))}
             </div>
-            {/* --- EINDE NIEUWE LIJST --- */}
           </CardContent>
         </Card>
+
+        {editingRule && <RuleEditForm rule={editingRule} onClose={() => setEditingRule(null)} />}
       </div>
     </Layout>
   )
@@ -1536,7 +1707,6 @@ export interface Rule {
   updated_at: string
 }
 
-// --- NIEUW (Feature 1) ---
 export interface AutomationLog {
   id: number
   timestamp: string // ISO 8601 date string
@@ -1553,6 +1723,28 @@ export interface AutomationLog {
   } | null
   error_message: string
 }
+
+// --- NIEUW TOEGEVOEGD ---
+
+// Dit type definieert de start/eindtijd van een Google Event
+// Het kan 'dateTime' (voor specifieke tijden) OF 'date' (voor 'all-day' events) bevatten
+export interface GoogleEventDateTime {
+  dateTime?: string
+  date?: string
+  timeZone?: string
+}
+
+// Dit is het type voor een Google Calendar Event-item
+export interface GoogleCalendarEvent {
+  id: string
+  summary: string
+  description?: string
+  location?: string
+  start: GoogleEventDateTime
+  end: GoogleEventDateTime
+  // Voeg hier meer velden toe als je ze nodig hebt
+}
+
 // --- EINDE NIEUW ---
 
 export interface ApiResponse<T> {
