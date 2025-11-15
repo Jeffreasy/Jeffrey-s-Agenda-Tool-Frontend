@@ -1,119 +1,51 @@
-import {
-  useAutomationRulesQuery,
-  useCreateAutomationRuleMutation,
-  useUpdateRuleStatusMutation,
-  useDeleteRuleMutation
-} from '@/lib/api'
-import {
-  AutomationRule,
-  BackendAutomationRule,
-  TriggerConditions,
-  ActionParams,
-  BackendTriggerConditions,
-  BackendActionParams
-} from '@/types/backend'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import api from '../lib/api'
+import { Rule } from '../types/backend'
 
-// Helper to convert backend snake_case to frontend camelCase
-function fromBackendTriggerConditions(btc: BackendTriggerConditions): TriggerConditions {
-  return {
-    summaryEquals: btc.summary_equals,
-    summaryContains: btc.summary_contains,
-    locationEquals: btc.location_equals,
-    locationContains: btc.location_contains,
-    descriptionContains: btc.description_contains,
-    statusEquals: btc.status_equals,
-    creatorContains: btc.creator_contains,
-    organizerContains: btc.organizer_contains,
-    startTimeAfter: btc.start_time_after,
-    startTimeBefore: btc.start_time_before,
-    endTimeAfter: btc.end_time_after,
-    endTimeBefore: btc.end_time_before,
-  };
+export const useRules = (accountId?: string) => {
+  return useQuery({
+    queryKey: ['rules', accountId],
+    queryFn: async () => {
+      const response = await api.get<Rule[]>(`/accounts/${accountId}/rules`)
+      return response.data
+    },
+    enabled: !!accountId,
+  })
 }
 
-function fromBackendActionParams(bap: BackendActionParams): ActionParams {
-  return {
-    offsetMinutes: bap.offset_minutes,
-    durationMin: bap.duration_min,
-    titlePrefix: bap.title_prefix,
-  };
+interface CreateRuleData {
+  connected_account_id: string
+  name: string
+  trigger_conditions: object
+  action_params: object
 }
 
-export function useRules(connectedAccountId?: string) {
+export const useCreateRule = () => {
   const queryClient = useQueryClient()
-  const { data: rules, ...query } = useAutomationRulesQuery(connectedAccountId || '')
-
-  // Parse backend data to frontend types with error handling
-  const parsedRules: AutomationRule[] = (rules || []).map((rule: BackendAutomationRule): AutomationRule => {
-    let triggerConditions: TriggerConditions = {};
-    let actionParams: ActionParams = { offsetMinutes: -60, durationMin: 5 };
-
-    try {
-      // Check if it's already an object (backend may send as object instead of string)
-      if (typeof rule.TriggerConditions === 'string') {
-        const parsed = JSON.parse(rule.TriggerConditions) as BackendTriggerConditions;
-        triggerConditions = fromBackendTriggerConditions(parsed);
-      } else {
-        triggerConditions = fromBackendTriggerConditions(rule.TriggerConditions as BackendTriggerConditions);
-      }
-    } catch (error) {
-      console.error(`Failed to parse TriggerConditions for rule ${rule.ID}:`, error);
-    }
-
-    try {
-      // Check if it's already an object (backend may send as object instead of string)
-      if (typeof rule.ActionParams === 'string') {
-        const parsed = JSON.parse(rule.ActionParams) as BackendActionParams;
-        actionParams = fromBackendActionParams(parsed);
-      } else {
-        actionParams = fromBackendActionParams(rule.ActionParams as BackendActionParams);
-      }
-    } catch (error) {
-      console.error(`Failed to parse ActionParams for rule ${rule.ID}, using defaults:`, error);
-    }
-
-    return {
-      id: rule.ID,
-      connectedAccountId: rule.ConnectedAccountID,
-      name: rule.Name,
-      isActive: rule.IsActive,
-      createdAt: rule.CreatedAt,
-      updatedAt: rule.UpdatedAt,
-      triggerConditions,
-      actionParams,
-    };
-  });
-
-  const createMutation = useCreateAutomationRuleMutation(queryClient)
-  const updateStatusMutation = useUpdateRuleStatusMutation(queryClient)
-  const deleteMutation = useDeleteRuleMutation(queryClient)
-
-  const createRule = (ruleData: {
-    connected_account_id: string
-    name: string
-    trigger_conditions: TriggerConditions
-    action_params: ActionParams
-  }) => {
-    return createMutation.mutateAsync(ruleData)
-  }
-
-  const toggleRuleStatus = (ruleId: string, isActive: boolean) => {
-    return updateStatusMutation.mutateAsync({ ruleId, isActive })
-  }
-
-  const deleteRule = (ruleId: string) => {
-    return deleteMutation.mutateAsync(ruleId)
-  }
-
-  return {
-    rules: parsedRules,
-    ...query,
-    createRule,
-    toggleRuleStatus,
-    deleteRule,
-    isCreating: createMutation.isPending,
-    isUpdating: updateStatusMutation.isPending,
-    isDeleting: deleteMutation.isPending,
-  }
+  return useMutation({
+    mutationFn: async (rule: CreateRuleData) => {
+      const response = await api.post<Rule>('/rules', rule)
+      return response.data
+    },
+    onSuccess: (data) => {
+      // Invalideer specifiek voor dit account
+      queryClient.invalidateQueries({ queryKey: ['rules', data.connected_account_id] })
+    },
+  })
 }
+
+// --- NIEUW (Feature 2) ---
+export const useDeleteRule = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (ruleId: string) => {
+      await api.delete(`/rules/${ruleId}`)
+    },
+    onSuccess: (_, variables, context) => {
+      // We weten niet welk accountId het was, dus invalideer alle rules
+      // Een betere implementatie zou het accountId meegeven
+      queryClient.invalidateQueries({ queryKey: ['rules'] })
+    },
+  })
+}
+// --- EINDE NIEUW ---

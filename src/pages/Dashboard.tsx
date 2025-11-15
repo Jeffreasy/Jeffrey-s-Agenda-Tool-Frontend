@@ -1,157 +1,168 @@
-import { useEffect } from 'react'
+import React, { useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { MainLayout } from '@/components/layout'
-import { CalendarView } from '@/components/calendar-view'
-import { LogTable } from '@/components/log-table'
-import { RulesManager } from '@/components/rules-manager'
-import { useStore } from '@/lib/store'
-import { useAccounts } from '@/hooks/useAccounts'
-import { AlertCircle, Loader2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Layout } from '../components/layout'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+import { Button } from '../components/ui/button' // <-- NIEUW
+import { RuleForm } from '../components/rule-form'
+import { useAccounts } from '../hooks/useAccounts'
+import { useRules, useDeleteRule } from '../hooks/useRules' // <-- AANGEPAST
+import { useLogs } from '../hooks/useLogs' // <-- NIEUW
+import { useAuthStore } from '../stores/authStore'
+import { format } from 'date-fns' // <-- NIEUW
+import { Trash2, CheckCircle, XCircle, SkipForward } from 'lucide-react' // <-- NIEUW
 
-export default function Dashboard() {
+const Dashboard: React.FC = () => {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  const { setAuthenticated, setLogs } = useStore()
+  const setToken = useAuthStore((state) => state.setToken)
 
-  // Extract userId from OAuth callback URL parameters
-  const userId = searchParams.get('userId') || ''
-
-  // Check authentication - require userId from OAuth callback
   useEffect(() => {
-    if (!userId) {
-      navigate('/login')
-      return
+    const token = searchParams.get('token')
+    if (token) {
+      console.log("Gevonden token! Opslaan...")
+      setToken(token)
+      navigate('/dashboard', { replace: true })
     }
-  }, [userId, navigate])
+  }, [searchParams, setToken, navigate])
 
-  // Fetch real accounts from backend using the userId from OAuth callback
-  const { accounts, isLoading: accountsLoading, error: accountsError } = useAccounts(userId)
+  // Data hooks
+  const { data: accounts, isLoading: accountsLoading } = useAccounts()
+  const firstAccountId = accounts?.[0]?.id
 
-  // Initialize empty logs once
-  useEffect(() => {
-    setLogs([])
-  }, [setLogs])
+  const { data: rules, isLoading: rulesLoading } = useRules(firstAccountId)
+  const { data: logs, isLoading: logsLoading } = useLogs(firstAccountId) // <-- NIEUW (Feature 1)
 
-  // Mark as authenticated on successful OAuth callback
-  useEffect(() => {
-    if (searchParams.get('success') === 'true') {
-      setAuthenticated(true)
+  // Action hooks
+  const deleteRule = useDeleteRule() // <-- NIEUW (Feature 2)
+
+  // --- NIEUW (Feature 1) ---
+  const renderLogIcon = (status: string) => {
+    switch (status) {
+      case 'success':
+        return <CheckCircle className="w-4 h-4 text-green-500" />
+      case 'failure':
+        return <XCircle className="w-4 h-4 text-red-500" />
+      case 'skipped':
+        return <SkipForward className="w-4 h-4 text-yellow-500" />
+      default:
+        return null
     }
-  }, [searchParams, setAuthenticated])
+  }
 
-  // Get first active account for rules manager
-  const activeAccount = accounts?.find((acc) => acc.status === 'active')
-  
-  console.log('Dashboard render - accounts:', accounts?.length || 0)
+  // --- NIEUW (Feature 1) ---
+  const getLogMessage = (log: any): string => {
+    if (log.status === 'success' && log.action_details?.created_event_summary) {
+      return `Created event: "${log.action_details.created_event_summary}"`
+    }
+    if (log.status === 'failure') {
+      return `Failed: ${log.error_message}`
+    }
+    if (log.status === 'skipped' && log.trigger_details?.trigger_summary) {
+      return `Skipped (already exists): "${log.trigger_details.trigger_summary}"`
+    }
+    return `Processed rule for "${log.trigger_details?.trigger_summary || 'event'}"`
+  }
 
   return (
-    <MainLayout>
-      <div className="space-y-8 animate-fade-in">
-        {/* Error State */}
-        {accountsError && (
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6 animate-scale-in">
-            <div className="flex items-start gap-4">
-              <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-              <div className="flex-1 space-y-2">
-                <h3 className="font-semibold text-destructive">Error Loading Accounts</h3>
-                <p className="text-sm text-destructive/90">{(accountsError as Error).message}</p>
+    <Layout>
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Dashboard</h1>
+          <p className="text-muted-foreground">Manage your accounts and automation rules</p>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* --- CARD 1: Connected Accounts (Aangepast voor duidelijkheid) --- */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Connected Accounts</CardTitle>
+              <CardDescription>
+                {accountsLoading ? 'Loading...' : `${accounts?.length || 0} accounts connected`}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {accountsLoading && <p>Loading accounts...</p>}
+              {accounts?.map((account) => (
+                <div key={account.id} className="flex justify-between items-center py-2">
+                  <span>{account.email}</span>
+                  <span className={`text-sm ${account.status === 'active' ? 'text-green-600' : 'text-red-600'}`}>
+                    {account.status === 'active' ? 'Connected' : 'Disconnected'}
+                  </span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          {/* --- CARD 2: Automation Rules (ZWAAR AANGEPAST) --- */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Automation Rules</CardTitle>
+              <CardDescription>
+                {rulesLoading ? 'Loading...' : `${rules?.length || 0} rules active`}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {firstAccountId && <RuleForm accountId={firstAccountId} />}
+
+              {/* --- NIEUWE LIJST (Feature 2) --- */}
+              <div className="mt-6 space-y-2">
+                {rulesLoading && <p className="text-sm text-muted-foreground">Loading rules...</p>}
+                {!rulesLoading && rules?.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No rules created yet.</p>
+                )}
+                {rules?.map((rule) => (
+                  <div key={rule.id} className="flex justify-between items-center p-2 rounded-md border">
+                    <span className="text-sm font-medium">{rule.name}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => deleteRule.mutate(rule.id)}
+                      disabled={deleteRule.isPending}
+                    >
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
               </div>
-            </div>
-            <div className="mt-4">
-              <Button asChild variant="destructive" size="sm">
-                <a href={`${import.meta.env.VITE_API_BASE_URL}/auth/google/login`}>
-                  Try Connecting Again
-                </a>
-              </Button>
-            </div>
-          </div>
-        )}
-        
-        {/* Loading State */}
-        {!accountsError && accountsLoading && (
-          <div className="flex flex-col items-center justify-center py-16 animate-fade-in">
-            <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-            <p className="text-lg font-medium mb-2">Loading Your Connected Accounts</p>
-            <p className="text-sm text-muted-foreground">
-              {userId ? `User ID: ${userId.substring(0, 8)}...` : 'No user ID found in URL'}
-            </p>
-          </div>
-        )}
-        
-        {/* No User ID State */}
-        {!accountsError && !accountsLoading && !userId && (
-          <div className="flex flex-col items-center justify-center py-16 text-center animate-scale-in">
-            <div className="rounded-full bg-muted p-4 mb-4">
-              <AlertCircle className="h-8 w-8 text-muted-foreground" />
-            </div>
-            <h2 className="text-2xl font-semibold mb-2">No User ID Found</h2>
-            <p className="text-muted-foreground mb-6 max-w-md">
-              Please log in via Google OAuth to access your dashboard and connect your calendar.
-            </p>
-            <Button asChild size="lg">
-              <a href={`${import.meta.env.VITE_API_BASE_URL}/auth/google/login`}>
-                Connect Google Account
-              </a>
-            </Button>
-          </div>
-        )}
-        
-        {/* No Accounts State */}
-        {!accountsError && !accountsLoading && userId && accounts?.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-center animate-scale-in">
-            <div className="rounded-full bg-muted p-4 mb-4">
-              <AlertCircle className="h-8 w-8 text-muted-foreground" />
-            </div>
-            <h2 className="text-2xl font-semibold mb-2">No Connected Accounts</h2>
-            <p className="text-muted-foreground mb-6 max-w-md">
-              Connect a Google account to get started with automated calendar reminders.
-            </p>
-            <Button asChild size="lg">
-              <a href={`${import.meta.env.VITE_API_BASE_URL}/auth/google/login`}>
-                Connect Google Account
-              </a>
-            </Button>
-          </div>
-        )}
-        
-        {/* Main Dashboard Content */}
-        {!accountsError && !accountsLoading && accounts && accounts.length > 0 && (
-          <>
-            {/* Calendar and Rules Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
-              {/* Calendar - Takes 2/3 of space on large screens */}
-              <div className="lg:col-span-2 animate-slide-in-from-left">
-                <CalendarView accounts={accounts} />
-              </div>
-              
-              {/* Rules Sidebar - Takes 1/3 of space on large screens */}
-              <div className="space-y-6 animate-slide-in-from-right">
-                {activeAccount ? (
-                  <RulesManager connectedAccountId={activeAccount.id} />
-                ) : (
-                  <div className="rounded-lg border border-dashed p-8 text-center">
-                    <AlertCircle className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
-                    <p className="font-medium mb-1">No Active Account</p>
-                    <p className="text-sm text-muted-foreground">
-                      Connect a Google account to create automation rules
+              {/* --- EINDE NIEUWE LIJST --- */}
+
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* --- CARD 3: Recent Activity (ZWAAR AANGEPAST) --- */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Activity</CardTitle>
+            <CardDescription>Latest automation events</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {/* --- NIEUWE LIJST (Feature 1) --- */}
+            {logsLoading && <p className="text-sm text-muted-foreground">Loading activity...</p>}
+            {!logsLoading && logs?.length === 0 && (
+              <p className="text-sm text-muted-foreground">No recent activity</p>
+            )}
+            <div className="space-y-4 max-h-96 overflow-y-auto">
+              {logs?.map((log) => (
+                <div key={log.id} className="flex items-start space-x-3">
+                  <div className="flex-shrink-0 mt-1">
+                    {renderLogIcon(log.status)}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{getLogMessage(log)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {format(new Date(log.timestamp), 'dd MMM yyyy, HH:mm')}
                     </p>
                   </div>
-                )}
-              </div>
+                </div>
+              ))}
             </div>
-            
-            {/* Recent Logs Section */}
-            <div className="space-y-4 animate-slide-in-from-bottom">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold tracking-tight">Recent Automation Logs</h2>
-                <span className="text-sm text-muted-foreground">Last 10 entries</span>
-              </div>
-              <LogTable limit={10} />
-            </div>
-          </>
-        )}
+            {/* --- EINDE NIEUWE LIJST --- */}
+          </CardContent>
+        </Card>
       </div>
-    </MainLayout>
+    </Layout>
   )
 }
+
+export default Dashboard
